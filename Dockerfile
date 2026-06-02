@@ -23,7 +23,7 @@ cargo build --release
 ### Second stage: Copy the built application into the runtime image.
 FROM alpine:latest AS runner
 
-LABEL version="0.2.4"
+LABEL version="0.2.5"
 LABEL description="chilled-crates: caching crates.io proxy with sparse-index age-gating"
 LABEL maintainer="3lpsy"
 
@@ -55,7 +55,7 @@ EXPOSE 3080
 #   CRATES_IO_PROXY_CACHE_TTL          index entry TTL, seconds (3600)
 #   CRATES_IO_PROXY_COOLDOWN           age-gate window, e.g. 7d (0 = off)
 #   CRATES_IO_PROXY_COOLDOWN_OVERRIDES comma-separated crates exempt from cooldown
-#   CRATES_IO_PROXY_SHOW_METRICS       1/true to report cached crates at `/`
+#   CRATES_IO_PROXY_ENABLE_METRICS     1/true to expose cached crates at /metrics
 #   LOG_LEVEL                          error|warn|info|debug|trace|off (info)
 #   RUST_LOG                           overrides the log level (module filters allowed)
 #

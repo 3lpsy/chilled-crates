@@ -52,24 +52,28 @@ chilled-crates --log-level debug
 LOG_LEVEL=warn chilled-crates
 ```
 
-### Metrics endpoint
+### Status, health, and metrics endpoints
 
-`GET /` is a liveness endpoint. By default it returns just:
+`GET /` is a minimal liveness endpoint, always available:
 
 ```json
-{"service": "chilled-crates", "status": "running"}
+{"status": "running"}
 ```
 
-With `--show-metrics` (or `CRATES_IO_PROXY_SHOW_METRICS=1`) it additionally lists the crate
-files currently in the cache, with versions and cache timestamps (unix seconds):
+`GET /healthz` is a health-check endpoint for probes/load balancers — HTTP 200 with a plain
+`ok` body (the conventional `healthz` contract).
+
+`GET /metrics` lists the crate files currently in the cache, with versions and cache timestamps
+(unix seconds). It is **only routed when enabled** with `--enable-metrics` (or
+`CRATES_IO_PROXY_ENABLE_METRICS=1`); otherwise it returns `404`.
 
 ```json
-{"service":"chilled-crates","status":"running","cached_count":2,
+{"service":"chilled-crates","cached_count":2,
  "crates":[{"name":"cfg-if","version":"1.0.0","cached_at":1780376385}]}
 ```
 
 ```
-chilled-crates --show-metrics
+chilled-crates --enable-metrics
 ```
 
 ---

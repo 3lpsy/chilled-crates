@@ -148,10 +148,6 @@ struct ProxyConfig {
 
     /// Lower-cased crate names exempt from age-gating (served unfiltered).
     overrides: Arc<HashSet<String>>,
-
-    /// When set, the `/` endpoint reports the cached crates and timestamps;
-    /// otherwise it returns only a minimal liveness status.
-    show_metrics: bool,
 }
 
 /// Shared application state passed to every request handler.
@@ -738,23 +734,35 @@ async fn handle_download(State(state): State<AppState>, UrlPath(path): UrlPath<S
     }
 }
 
-/// Minimal liveness body returned at `/` when metrics are disabled.
-const STATUS_JSON: &str = r#"{"service":"chilled-crates","status":"running"}"#;
+/// Liveness body returned at `/`.
+const STATUS_JSON: &str = r#"{"status":"running"}"#;
 
-/// Handles `GET /`: a liveness/metrics endpoint.
+/// Handles `GET /`: a minimal liveness status, always available.
+async fn handle_home() -> Response {
+    json_response(200, STATUS_JSON.to_owned())
+}
+
+/// Handles `GET /healthz`: a health-check endpoint for probes/load balancers.
 ///
-/// With `--show-metrics` it reports every cached crate file (name, version,
-/// and cache timestamp); otherwise it returns only [`STATUS_JSON`].
-async fn handle_home(State(state): State<AppState>) -> Response {
-    if !state.config.show_metrics {
-        return json_response(200, STATUS_JSON.to_owned());
-    }
+/// Follows the conventional `healthz` contract — HTTP 200 with a plain `ok`
+/// body — which is all a Kubernetes/LB liveness probe inspects.
+async fn handle_healthz() -> Response {
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .body(Body::from("ok\n"))
+        .expect("valid healthz response")
+}
 
+/// Handles `GET /metrics`: reports every cached crate file (name, version, and
+/// cache timestamp). Only routed when metrics are enabled, so reaching this
+/// handler means the operator opted in.
+async fn handle_metrics(State(state): State<AppState>) -> Response {
     let dir = state.config.crates_dir.clone();
-    let body = tokio::task::spawn_blocking(move || metrics_json(&dir))
-        .await
-        .unwrap_or_else(|_| STATUS_JSON.to_owned());
-    json_response(200, body)
+    match tokio::task::spawn_blocking(move || metrics_json(&dir)).await {
+        Ok(body) => json_response(200, body),
+        Err(_) => error_response(500),
+    }
 }
 
 /// Builds the metrics JSON document by scanning the crate file cache.
@@ -773,7 +781,7 @@ fn metrics_json(crates_dir: &Path) -> String {
         .collect();
 
     format!(
-        r#"{{"service":"chilled-crates","status":"running","cached_count":{},"crates":[{}]}}"#,
+        r#"{{"service":"chilled-crates","cached_count":{},"crates":[{}]}}"#,
         items.len(),
         crates.join(",")
     )
@@ -851,7 +859,7 @@ fn usage() {
     println!("Options:");
     println!("    -v, --verbose              raise log level (-v debug, -vv trace)");
     println!("    -l, --log-level LEVEL      log level: error|warn|info|debug|trace|off (info)");
-    println!("    -m, --show-metrics         report cached crates at the `/` endpoint");
+    println!("    -m, --enable-metrics       expose cached crates at the /metrics endpoint");
     println!("    -h, --help                 print help and exit");
     println!("    -V, --version              print version and exit");
     println!("    -L, --listen ADDRESS:PORT  address and port to listen at (0.0.0.0:3080)");
@@ -872,7 +880,7 @@ fn usage() {
     println!("    CRATES_IO_PROXY_CACHE_TTL    same as --cache-ttl option");
     println!("    CRATES_IO_PROXY_COOLDOWN     same as --cooldown option");
     println!("    CRATES_IO_PROXY_COOLDOWN_OVERRIDES  same as --cooldown-overrides option");
-    println!("    CRATES_IO_PROXY_SHOW_METRICS same as --show-metrics option");
+    println!("    CRATES_IO_PROXY_ENABLE_METRICS same as --enable-metrics option");
     println!("    LOG_LEVEL                    same as --log-level option");
     println!("    RUST_LOG                     overrides the log level (module filters allowed)");
 }
@@ -917,7 +925,7 @@ async fn main() {
     let default_overrides =
         env::var("CRATES_IO_PROXY_COOLDOWN_OVERRIDES").unwrap_or_default();
     let default_log_level = env::var("LOG_LEVEL").ok();
-    let env_show_metrics = env_flag("CRATES_IO_PROXY_SHOW_METRICS");
+    let env_enable_metrics = env_flag("CRATES_IO_PROXY_ENABLE_METRICS");
 
     let mut verbose: u32 = 0;
     let mut args = Arguments::from_env();
@@ -984,7 +992,7 @@ async fn main() {
         .opt_value_from_str(["-l", "--log-level"])
         .expect("bad log-level argument");
 
-    let show_metrics = env_show_metrics || args.contains(["-m", "--show-metrics"]);
+    let enable_metrics = env_enable_metrics || args.contains(["-m", "--enable-metrics"]);
 
     // Resolve the log level: `--log-level` / `-v` win over `LOG_LEVEL`, which
     // wins over the `info` default. (`RUST_LOG` still overrides everything via
@@ -1039,17 +1047,13 @@ async fn main() {
         cache_ttl,
         cooldown,
         overrides: Arc::new(overrides),
-        show_metrics,
     };
 
-    info!(
-        "metrics: `/` endpoint {}",
-        if show_metrics {
-            "reports cached crates"
-        } else {
-            "returns liveness status only"
-        }
-    );
+    if enable_metrics {
+        info!("metrics: /metrics endpoint enabled");
+    } else {
+        info!("metrics: /metrics endpoint disabled");
+    }
 
     let client = reqwest::Client::builder()
         .user_agent(HTTP_USER_AGENT)
@@ -1063,10 +1067,18 @@ async fn main() {
         memo: Arc::new(FilteredMemo::new()),
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/", get(handle_home))
+        .route("/healthz", get(handle_healthz))
         .route("/index/{*path}", get(handle_index))
-        .route("/api/v1/crates/{*path}", get(handle_download))
+        .route("/api/v1/crates/{*path}", get(handle_download));
+
+    // The metrics endpoint is only routed when enabled; otherwise it 404s.
+    if enable_metrics {
+        app = app.route("/metrics", get(handle_metrics));
+    }
+
+    let app = app
         .fallback(|| async { error_response(404) })
         .with_state(state);
 

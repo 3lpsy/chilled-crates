@@ -10,7 +10,7 @@
 [package]
 name = "chilled-crates"
 description = "Caching crates.io proxy with sparse-index age-gating against supply-chain attacks"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["3lpsy"]
 edition = "2021"
 homepage = "https://github.com/3lpsy/chilled-crates"
