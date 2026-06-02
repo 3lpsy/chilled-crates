@@ -101,12 +101,63 @@ chilled-crates --enable-metrics
 
 ---
 
-## Upstream documentation
+## How it works (inherited caching-proxy behavior)
 
-`chilled-crates` keeps the caching-proxy core of `crates-io-proxy` (transparent caching of the
-sparse index and the crate download server, source-replacement setup, static git-index mirror
-mode, and the build-time `native-certs` feature). For that base behavior and its configuration,
-see the upstream README:
+Underneath the cooldown layer, `chilled-crates` is the `crates-io-proxy` caching proxy. It serves
+two `GET` endpoints and caches everything it fetches on the local filesystem:
+
+- **Sparse index** — `GET /index/<prefix>/<crate>` is forwarded to the upstream index
+  (`--index-url`, default <https://index.crates.io/>) and the response is cached as a plain-text
+  JSON file under `<cache-dir>/index/`. Cached entries are revalidated against upstream with
+  conditional requests once they are older than `--cache-ttl` (default 3600s); a fresh entry is
+  served straight from disk. **This is the endpoint the cooldown filter age-gates.**
+- **Crate downloads** — `GET /api/v1/crates/<crate>/<version>/download` is forwarded to the
+  upstream download server (`--upstream-url`, default <https://crates.io/>) and the `.crate` file
+  is cached under `<cache-dir>/crates/`. Crate bytes are served verbatim and never modified.
+
+### `config.json` rewriting
+
+`GET /index/config.json` is generated on the fly rather than proxied: it returns
+`{"dl": "<proxy-url>/api/v1/crates", "api": "<upstream-url>"}`, where `<proxy-url>` comes from
+`--proxy-url`. This points cargo's crate downloads back at this proxy, so just setting the index
+source replacement (above) routes both metadata and downloads through it.
+
+### Key parameters
+
+| Flag (env var) | Purpose | Default |
+| --- | --- | --- |
+| `--cache-dir` (`CRATES_IO_PROXY_CACHE_DIR`) | Root of the on-disk cache (`index/` + `crates/`). | `/var/cache/chilled-crates` |
+| `--cache-ttl` (`CRATES_IO_PROXY_CACHE_TTL`) | Seconds before a cached index entry is revalidated. | `3600` |
+| `--proxy-url` (`CRATES_IO_PROXY_URL`) | This proxy's external URL, used to build `config.json`'s `dl`. | `http://localhost:3080/` |
+| `--index-url` (`INDEX_CRATES_IO_URL`) | Upstream sparse-index URL. | `https://index.crates.io/` |
+| `--upstream-url` (`CRATES_IO_URL`) | Upstream crate-download URL. | `https://crates.io/` |
+| `--listen` / `--listen-unix` | Listen on a `host:port` or a Unix-domain socket. | `0.0.0.0:3080` |
+
+See the [command-line options](#command-line-options) below for the full list.
+
+### Static git-index mirror mode
+
+Because the download endpoint and `config.json` are independent of the sparse index, the proxy can
+also act purely as the crate-file download server behind a separate git-based registry index:
+rehost the [crates.io index](https://github.com/rust-lang/crates.io-index) and set its `config.json`
+`"dl"` to `https://<this-proxy>/api/v1/crates`.
+
+In this mode the cooldown protections **do not apply**: both index age-gating and
+`--restrict-downloads` require cargo to fetch the sparse index *through this proxy*. (Index
+age-gating only filters the proxy's `/index/` endpoint, which a git mirror bypasses; and
+`--restrict-downloads` reads the requested version's publish time from the proxy's locally cached
+index entry and is fail-closed, so with the sparse-index endpoint unused it would refuse every
+download.) Use the sparse-index setup above if you want the cooldown.
+
+### TLS roots
+
+By default the bundled `webpki` root certificates are used. Build with the `native-certs` feature
+to use the OS-native trusted root store instead (run-time selection is not supported).
+
+## Reference: original `crates-io-proxy`
+
+This fork has been heavily refactored. If you wish to reference the original README to review the
+original functionality and source code, it can be found here:
 
 <https://github.com/ravenexp/crates-io-proxy#readme>
 
