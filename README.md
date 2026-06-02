@@ -39,6 +39,39 @@ chilled-crates --cooldown 7d --cooldown-overrides my-app,my-lib
 CRATES_IO_PROXY_COOLDOWN_OVERRIDES="my-app,my-lib" chilled-crates --cooldown 7d
 ```
 
+### Logging
+
+Logs are written to **stdout**. The level defaults to `info` and is set with `--log-level`
+(or the `LOG_LEVEL` env var): `error`, `warn`, `info`, `debug`, `trace`, or `off`. `-v`/`-vv`
+are shortcuts for `debug`/`trace`, and `RUST_LOG` still overrides everything (and allows
+per-module filters). `info` stays quiet during normal operation — errors, malformed requests,
+and bad upstream responses are logged, but routine cache hits are `debug`.
+
+```
+chilled-crates --log-level debug
+LOG_LEVEL=warn chilled-crates
+```
+
+### Metrics endpoint
+
+`GET /` is a liveness endpoint. By default it returns just:
+
+```json
+{"service": "chilled-crates", "status": "running"}
+```
+
+With `--show-metrics` (or `CRATES_IO_PROXY_SHOW_METRICS=1`) it additionally lists the crate
+files currently in the cache, with versions and cache timestamps (unix seconds):
+
+```json
+{"service":"chilled-crates","status":"running","cached_count":2,
+ "crates":[{"name":"cfg-if","version":"1.0.0","cached_at":1780376385}]}
+```
+
+```
+chilled-crates --show-metrics
+```
+
 ---
 
 **Warning:** this project has not been reviewed for vulnerabilities and security issues. It is

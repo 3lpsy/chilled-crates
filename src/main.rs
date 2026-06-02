@@ -148,6 +148,10 @@ struct ProxyConfig {
 
     /// Lower-cased crate names exempt from age-gating (served unfiltered).
     overrides: Arc<HashSet<String>>,
+
+    /// When set, the `/` endpoint reports the cached crates and timestamps;
+    /// otherwise it returns only a minimal liveness status.
+    show_metrics: bool,
 }
 
 /// Shared application state passed to every request handler.
@@ -616,7 +620,7 @@ async fn forward_index(
 
     match response.status {
         200 => {
-            info!("fetch: successfully got index entry for {name}");
+            debug!("fetch: successfully got index entry for {name}");
             cache_write_index(&state.config.index_dir, &response.entry, &response.data).await;
             metadata_store_index_entry(&response.entry);
 
@@ -685,7 +689,7 @@ async fn handle_index(
     // Serve from cache when the metadata cache is warm and unexpired.
     if let Some(cached_entry) = metadata_fetch_index_entry(&name) {
         if cached_entry.is_expired_with_ttl(&state.config.cache_ttl) {
-            info!("proxy: index cache expired for {name}, refreshing...");
+            debug!("proxy: index cache expired for {name}, refreshing...");
             return forward_index(&state, index_entry, Some(cached_entry), &name, window_ok).await;
         }
 
@@ -719,7 +723,7 @@ async fn handle_download(State(state): State<AppState>, UrlPath(path): UrlPath<S
 
     match download_crate(&state, &crate_info).await {
         Ok(data) => {
-            info!("fetch: successfully downloaded {crate_info}");
+            debug!("fetch: successfully downloaded {crate_info}");
             // Store off-thread; `Bytes` clones are cheap (refcounted).
             let dir = state.config.crates_dir.clone();
             let info = crate_info.clone();
@@ -730,6 +734,92 @@ async fn handle_download(State(state): State<AppState>, UrlPath(path): UrlPath<S
         }
         Err(response) => response,
     }
+}
+
+/// Minimal liveness body returned at `/` when metrics are disabled.
+const STATUS_JSON: &str = r#"{"service":"chilled-crates","status":"running"}"#;
+
+/// Handles `GET /`: a liveness/metrics endpoint.
+///
+/// With `--show-metrics` it reports every cached crate file (name, version,
+/// and cache timestamp); otherwise it returns only [`STATUS_JSON`].
+async fn handle_home(State(state): State<AppState>) -> Response {
+    if !state.config.show_metrics {
+        return json_response(200, STATUS_JSON.to_owned());
+    }
+
+    let dir = state.config.crates_dir.clone();
+    let body = tokio::task::spawn_blocking(move || metrics_json(&dir))
+        .await
+        .unwrap_or_else(|_| STATUS_JSON.to_owned());
+    json_response(200, body)
+}
+
+/// Builds the metrics JSON document by scanning the crate file cache.
+///
+/// Names and versions are restricted to the validated charset, so they are
+/// embedded into JSON strings without escaping.
+fn metrics_json(crates_dir: &Path) -> String {
+    let mut items = scan_cached_crates(crates_dir);
+    items.sort();
+
+    let crates: Vec<String> = items
+        .iter()
+        .map(|(name, version, cached_at)| {
+            format!(r#"{{"name":"{name}","version":"{version}","cached_at":{cached_at}}}"#)
+        })
+        .collect();
+
+    format!(
+        r#"{{"service":"chilled-crates","status":"running","cached_count":{},"crates":[{}]}}"#,
+        items.len(),
+        crates.join(",")
+    )
+}
+
+/// Scans the crate file cache, returning `(name, version, mtime-unix-secs)` for
+/// each cached `.crate` file. Best-effort: unreadable or malformed entries are
+/// skipped rather than failing the whole report.
+fn scan_cached_crates(crates_dir: &Path) -> Vec<(String, String, u64)> {
+    let mut out = Vec::new();
+    let Ok(crate_dirs) = std::fs::read_dir(crates_dir) else {
+        return out;
+    };
+
+    for crate_dir in crate_dirs.flatten() {
+        if !crate_dir.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+        let name = crate_dir.file_name().to_string_lossy().into_owned();
+        if !valid::is_crate_name(&name) {
+            continue;
+        }
+
+        let Ok(files) = std::fs::read_dir(crate_dir.path()) else {
+            continue;
+        };
+        let prefix = format!("{name}-");
+        for file in files.flatten() {
+            let file_name = file.file_name().to_string_lossy().into_owned();
+            let Some(version) = file_name
+                .strip_suffix(".crate")
+                .and_then(|rest| rest.strip_prefix(&prefix))
+            else {
+                continue;
+            };
+            if !valid::is_crate_version(version) {
+                continue;
+            }
+            let cached_at = file
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_secs());
+            out.push((name.clone(), version.to_owned(), cached_at));
+        }
+    }
+    out
 }
 
 /// Server listening address.
@@ -757,7 +847,9 @@ fn version() {
 fn usage() {
     println!("Usage:\n    chilled-crates [options]\n");
     println!("Options:");
-    println!("    -v, --verbose              print more debug info");
+    println!("    -v, --verbose              raise log level (-v debug, -vv trace)");
+    println!("    -l, --log-level LEVEL      log level: error|warn|info|debug|trace|off (info)");
+    println!("    -m, --show-metrics         report cached crates at the `/` endpoint");
     println!("    -h, --help                 print help and exit");
     println!("    -V, --version              print version and exit");
     println!("    -L, --listen ADDRESS:PORT  address and port to listen at (0.0.0.0:3080)");
@@ -778,6 +870,22 @@ fn usage() {
     println!("    CRATES_IO_PROXY_CACHE_TTL    same as --cache-ttl option");
     println!("    CRATES_IO_PROXY_COOLDOWN     same as --cooldown option");
     println!("    CRATES_IO_PROXY_COOLDOWN_OVERRIDES  same as --cooldown-overrides option");
+    println!("    CRATES_IO_PROXY_SHOW_METRICS same as --show-metrics option");
+    println!("    LOG_LEVEL                    same as --log-level option");
+    println!("    RUST_LOG                     overrides the log level (module filters allowed)");
+}
+
+/// Reads a boolean environment flag (`1`/`true`/`yes`/`on`, case-insensitive).
+fn env_flag(name: &str) -> bool {
+    env::var(name).is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+}
+
+/// Normalizes a requested log level to a known value, defaulting to `info`.
+fn normalize_log_level(level: Option<String>) -> String {
+    match level.as_deref().map(str::trim).map(str::to_ascii_lowercase) {
+        Some(l) if matches!(l.as_str(), "error" | "warn" | "info" | "debug" | "trace" | "off") => l,
+        _ => "info".to_string(),
+    }
 }
 
 /// Parses a comma/whitespace-separated crate list into a lower-cased set.
@@ -806,6 +914,8 @@ async fn main() {
         env::var("CRATES_IO_PROXY_COOLDOWN").unwrap_or_else(|_| "0".to_string());
     let default_overrides =
         env::var("CRATES_IO_PROXY_COOLDOWN_OVERRIDES").unwrap_or_default();
+    let default_log_level = env::var("LOG_LEVEL").ok();
+    let env_show_metrics = env_flag("CRATES_IO_PROXY_SHOW_METRICS");
 
     let mut verbose: u32 = 0;
     let mut args = Arguments::from_env();
@@ -868,14 +978,24 @@ async fn main() {
         .expect("bad cooldown-overrides argument")
         .unwrap_or(default_overrides);
 
-    let loglevel = match verbose {
-        0 => "warn",
-        1 => "info",
-        2 => "debug",
-        _ => "trace",
+    let log_level_arg: Option<String> = args
+        .opt_value_from_str(["-l", "--log-level"])
+        .expect("bad log-level argument");
+
+    let show_metrics = env_show_metrics || args.contains(["-m", "--show-metrics"]);
+
+    // Resolve the log level: `--log-level` / `-v` win over `LOG_LEVEL`, which
+    // wins over the `info` default. (`RUST_LOG` still overrides everything via
+    // `from_env`.) Logs go to stdout.
+    let log_level = match verbose {
+        0 => normalize_log_level(log_level_arg.or(default_log_level)),
+        1 => "debug".to_string(),
+        _ => "trace".to_string(),
     };
 
-    LogBuilder::from_env(LogEnv::new().default_filter_or(loglevel)).init();
+    LogBuilder::from_env(LogEnv::new().default_filter_or(log_level))
+        .target(env_logger::Target::Stdout)
+        .init();
 
     let index_url = Url::parse(&index_url_string).expect("invalid upstream URL format");
     info!("proxy: using upstream index URL: {index_url}");
@@ -917,7 +1037,17 @@ async fn main() {
         cache_ttl,
         cooldown,
         overrides: Arc::new(overrides),
+        show_metrics,
     };
+
+    info!(
+        "metrics: `/` endpoint {}",
+        if show_metrics {
+            "reports cached crates"
+        } else {
+            "returns liveness status only"
+        }
+    );
 
     let client = reqwest::Client::builder()
         .user_agent(HTTP_USER_AGENT)
@@ -932,6 +1062,7 @@ async fn main() {
     };
 
     let app = Router::new()
+        .route("/", get(handle_home))
         .route("/index/{*path}", get(handle_index))
         .route("/api/v1/crates/{*path}", get(handle_download))
         .fallback(|| async { error_response(404) })
