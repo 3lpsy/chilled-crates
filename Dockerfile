@@ -55,6 +55,7 @@ EXPOSE 3080
 #   CRATES_IO_PROXY_CACHE_TTL          index entry TTL, seconds (3600)
 #   CRATES_IO_PROXY_COOLDOWN           age-gate window, e.g. 7d (0 = off)
 #   CRATES_IO_PROXY_COOLDOWN_OVERRIDES comma-separated crates exempt from cooldown
+#   CRATES_IO_PROXY_RESTRICT_DOWNLOADS 1/true to also refuse too-new downloads
 #   CRATES_IO_PROXY_ENABLE_METRICS     1/true to expose cached crates at /metrics
 #   LOG_LEVEL                          error|warn|info|debug|trace|off (info)
 #   RUST_LOG                           overrides the log level (module filters allowed)

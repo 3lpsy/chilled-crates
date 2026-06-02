@@ -80,7 +80,7 @@ LOG_LEVEL=warn chilled-crates
 `GET /` is a minimal liveness endpoint, always available:
 
 ```json
-{"status": "running"}
+{"status":"running"}
 ```
 
 `GET /healthz` is a health-check endpoint for probes/load balancers — HTTP 200 with a plain
