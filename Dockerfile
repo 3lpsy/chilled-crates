@@ -1,39 +1,66 @@
 #
-# Dockerfile for the crates-io-proxy server application
+# Dockerfile for the chilled-crates server application.
+#
+# chilled-crates is a friendly fork of crates-io-proxy (ravenexp) with added
+# sparse-index age-gating; see README.md for attribution.
 #
 
 ### First stage: Build the application itself.
-FROM rust:alpine as builder
+FROM rust:alpine AS builder
 
-WORKDIR /builds/crates-io-proxy
+WORKDIR /builds/chilled-crates
 
 # Copy source data (see .dockerignore for excludes).
 COPY . .
 
-# Install the build deps and build the application with cargo.
+# Build deps: musl-dev plus the toolchain aws-lc-rs (rustls crypto backend,
+# pulled in by reqwest's rustls-tls) needs on Alpine — a C/C++ compiler, cmake,
+# and clang/libclang for bindgen.
 RUN \
-apk add musl-dev && \
+apk add --no-cache musl-dev build-base cmake clang-dev && \
 cargo build --release
 
 ### Second stage: Copy the built application into the runtime image.
-FROM alpine:latest as runner
+FROM alpine:latest AS runner
 
-LABEL version="0.2.1"
-LABEL description="crates.io proxy container image"
-LABEL maintainer="Sergey Kvachonok <ravenexp@gmail.com>"
+LABEL version="0.2.4"
+LABEL description="chilled-crates: caching crates.io proxy with sparse-index age-gating"
+LABEL maintainer="3lpsy"
 
 # Install the compiled executable into the system.
-COPY --from=builder /builds/crates-io-proxy/target/release/crates-io-proxy /usr/bin/crates-io-proxy
+COPY --from=builder /builds/chilled-crates/target/release/chilled-crates /usr/bin/chilled-crates
 
 # Add the proxy service user and create the crate files cache directory writable by it.
 RUN \
-adduser -SHD -u 777 -h /var/empty -s /sbin/nologin -g "crates.io proxy" cratesioxy && \
-mkdir /var/cache/crates-io-proxy && \
-chown cratesioxy /var/cache/crates-io-proxy
+adduser -SHD -u 777 -h /var/empty -s /sbin/nologin -g "chilled-crates proxy" app && \
+mkdir /var/cache/chilled-crates && \
+chown app /var/cache/chilled-crates
 
 # Switch to the service user to run the proxy process.
-USER cratesioxy
+USER app
 WORKDIR /var/empty
 
-# Run the proxy server with the default configuration.
-CMD crates-io-proxy --verbose
+# Default sparse-index access endpoint.
+EXPOSE 3080
+
+# Configuration is read from the environment (or CLI flags) at run time. These
+# are NOT declared with `ENV` on purpose: an `ENV` default would shadow the
+# binary's own built-in default, creating two sources of truth. Pass any of
+# them with `-e NAME=value` / `--env-file`; unset vars use the code defaults.
+#
+#   INDEX_CRATES_IO_URL                upstream index URL   (https://index.crates.io/)
+#   CRATES_IO_URL                      upstream download URL (https://crates.io/)
+#   CRATES_IO_PROXY_URL                this proxy's external URL (http://localhost:3080/)
+#   CRATES_IO_PROXY_CACHE_DIR          cache directory      (/var/cache/chilled-crates)
+#   CRATES_IO_PROXY_CACHE_TTL          index entry TTL, seconds (3600)
+#   CRATES_IO_PROXY_COOLDOWN           age-gate window, e.g. 7d (0 = off)
+#   CRATES_IO_PROXY_COOLDOWN_OVERRIDES comma-separated crates exempt from cooldown
+#   CRATES_IO_PROXY_SHOW_METRICS       1/true to report cached crates at `/`
+#   LOG_LEVEL                          error|warn|info|debug|trace|off (info)
+#   RUST_LOG                           overrides the log level (module filters allowed)
+#
+# Note: the default cache dir is baked into the image (created + owned above);
+# override CRATES_IO_PROXY_CACHE_DIR only if you mount a different writable path.
+
+# Run the proxy server with the default configuration (info logging to stdout).
+CMD ["chilled-crates"]

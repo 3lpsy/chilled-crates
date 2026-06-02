@@ -83,7 +83,7 @@ const DEFAULT_PROXY_URL: &str = "http://localhost:3080/";
 const CRATES_API_PATH: &str = "/api/v1/crates/";
 
 /// Default crate files cache directory path
-const DEFAULT_CACHE_DIR: &str = "/var/cache/crates-io-proxy";
+const DEFAULT_CACHE_DIR: &str = "/var/cache/chilled-crates";
 
 /// Default index cache entry Time-to-Live in seconds
 const DEFAULT_CACHE_TTL_SECS: u64 = 3600;
@@ -723,13 +723,15 @@ async fn handle_download(State(state): State<AppState>, UrlPath(path): UrlPath<S
 
     match download_crate(&state, &crate_info).await {
         Ok(data) => {
-            debug!("fetch: successfully downloaded {crate_info}");
             // Store off-thread; `Bytes` clones are cheap (refcounted).
             let dir = state.config.crates_dir.clone();
             let info = crate_info.clone();
             let stored = data.clone();
             let _ =
                 tokio::task::spawn_blocking(move || cache_store_crate(&dir, &info, &stored)).await;
+            // Cache misses are infrequent (once per crate version), so this is a
+            // useful high-level event without polluting the log.
+            info!("cache: stored new crate {crate_info} ({} bytes)", data.len());
             crate_response(data)
         }
         Err(response) => response,
@@ -857,7 +859,7 @@ fn usage() {
     println!("    -U, --upstream-url URL     upstream download URL (https://crates.io/)");
     println!("    -I, --index-url URL        upstream index URL (https://index.crates.io/)");
     println!("    -S, --proxy-url URL        this proxy server URL (http://localhost:3080/)");
-    println!("    -C, --cache-dir DIR        proxy cache directory (/var/cache/crates-io-proxy)");
+    println!("    -C, --cache-dir DIR        proxy cache directory (/var/cache/chilled-crates)");
     println!("    -T, --cache-ttl SECONDS    index cache entry Time-to-Live in seconds (3600)");
     println!("    -K, --cooldown DURATION    hide index versions newer than this (0 = off)");
     println!("                               suffixes: s, m, h, d, w (e.g. 7d, 12h, 30m)");
