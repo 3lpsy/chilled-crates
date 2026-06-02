@@ -38,24 +38,25 @@ impl IndexEntry {
     }
 
     /// Creates an entry from the sparse index URL path.
+    ///
+    /// Rejects crate names outside the crates.io character set, closing off
+    /// SSRF and path-traversal via crafted index paths.
     #[must_use]
     pub fn try_from_index_url(url: &str) -> Option<Self> {
-        if url.contains('.') {
-            return None;
-        }
-
         let mut i = url.split('/');
 
-        match i.next() {
+        let name = match i.next() {
             Some("1" | "2") => match (i.next(), i.next()) {
-                (Some(name), None) => Some(IndexEntry::new(name)),
-                _ => None,
+                (Some(name), None) => name,
+                _ => return None,
             },
             _ => match (i.next(), i.next(), i.next()) {
-                (Some(_), Some(name), None) => Some(IndexEntry::new(name)),
-                _ => None,
+                (Some(_), Some(name), None) => name,
+                _ => return None,
             },
-        }
+        };
+
+        crate::valid::is_crate_name(name).then(|| IndexEntry::new(name))
     }
 
     /// Gets the crate name.

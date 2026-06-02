@@ -36,13 +36,20 @@ impl CrateInfo {
     }
 
     /// Extracts crate information from the download API URL path.
+    ///
+    /// Rejects names/versions outside the crates.io character set, which would
+    /// otherwise enable SSRF (e.g. a `http:` scheme segment) or path traversal.
     #[must_use]
     pub fn try_from_download_url(url: &str) -> Option<Self> {
         let name_version = url.strip_suffix(DOWNLOAD_API_ENDPOINT)?;
 
         let mut i = name_version.split('/');
         match (i.next(), i.next(), i.next()) {
-            (Some(name), Some(version), None) => Some(CrateInfo::new(name, version)),
+            (Some(name), Some(version), None)
+                if crate::valid::is_crate_name(name) && crate::valid::is_crate_version(version) =>
+            {
+                Some(CrateInfo::new(name, version))
+            }
             _ => None,
         }
     }

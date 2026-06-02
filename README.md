@@ -1,3 +1,53 @@
+Chilled Crates
+==============
+
+A fork of [`crates-io-proxy`](https://github.com/ravenexp/crates-io-proxy) that adds a
+configurable **cooldown delay**: the proxy hides sparse-index crate versions newer than a chosen
+window, so freshly-published (possibly malicious) releases are withheld until the community has
+had time to detect and yank them. The age-gating logic is ported from
+[menhera.org's cooldown proxy](https://www.menhera.org/crates-io-cooldown-proxy-mitigating-supply-chain-attacks/).
+
+Enable the delay with the `--cooldown` flag (or `CRATES_IO_PROXY_COOLDOWN` env var), taking a
+duration with an `s`/`m`/`h`/`d`/`w` suffix; `0` (the default) disables it. Clients use the proxy
+exactly as they would the upstream — point cargo at it via source replacement in `.cargo/config`:
+
+```
+# server: 7-day cooldown
+chilled-crates --cooldown 7d
+
+# client: .cargo/config
+[source.crates-io]
+replace-with = "chilled-crates"
+
+[registries.chilled-crates]
+index = "sparse+http://chilled-crates.example.com:3080/index/"
+```
+
+### Exempting crates from the cooldown
+
+Specific crates can bypass the cooldown (always served unfiltered) with
+`--cooldown-overrides` (or the `CRATES_IO_PROXY_COOLDOWN_OVERRIDES` env var), taking a
+comma-separated list of crate names. Use it for first-party crates you publish and consume
+yourself, where the delay only gets in your way. Matching is case-insensitive against the
+canonical index name (it does **not** normalize `-` vs `_`).
+
+```
+# 7-day cooldown for everything except `my-app` and `my-lib`
+chilled-crates --cooldown 7d --cooldown-overrides my-app,my-lib
+
+# equivalently, via the environment
+CRATES_IO_PROXY_COOLDOWN_OVERRIDES="my-app,my-lib" chilled-crates --cooldown 7d
+```
+
+---
+
+**Warning:** this project has not been reviewed for vulnerabilities and security issues. It is
+not recommended to expose the service to the internet or adversarial networks.
+
+---
+
+The original `crates-io-proxy` README follows.
+
 Caching HTTP proxy server for the `crates.io` registry
 ======================================================
 

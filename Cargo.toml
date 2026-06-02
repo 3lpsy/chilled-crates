@@ -1,27 +1,40 @@
+# chilled-crates is a friendly fork combining two upstream projects:
+#   * crates-io-proxy by Sergey Kvachonok (ravenexp) — the caching proxy core.
+#     https://github.com/ravenexp/crates-io-proxy
+#   * menhera.org's crates.io cooldown proxy (metastable-void) — the sparse-index
+#     age-gating logic, ported into src/cooldown.rs.
+#     https://www.menhera.org/crates-io-cooldown-proxy-mitigating-supply-chain-attacks/
+# We did not write the core logic of either; credit and thanks to both. The
+# license is carried over from crates-io-proxy unchanged.
+
 [package]
-name = "crates-io-proxy"
-description = "Caching HTTP proxy server for the crates.io registry"
+name = "chilled-crates"
+description = "Caching crates.io proxy with sparse-index age-gating against supply-chain attacks"
 version = "0.2.4"
-authors = ["Sergey Kvachonok <ravenexp@gmail.com>"]
+authors = ["3lpsy"]
 edition = "2021"
-homepage = "https://github.com/ravenexp/crates-io-proxy"
-repository = "https://github.com/ravenexp/crates-io-proxy"
+homepage = "https://github.com/3lpsy/chilled-crates"
+repository = "https://github.com/3lpsy/chilled-crates"
 license = "MIT OR Apache-2.0"
 keywords = ["crates", "cargo", "registry", "proxy", "cache"]
 categories = ["development-tools", "caching", "web-programming::http-server"]
 readme = "README.md"
 
 [features]
-native-certs = [ "ureq/native-certs" ]
+# Use the OS-native trusted root certificate store instead of the bundled
+# webpki roots. (Repointed from ureq to reqwest during the axum port.)
+native-certs = ["reqwest/rustls-tls-native-roots"]
 
 [dependencies]
-tiny_http = "0.12"
 httpdate = "1.0"
 url = "2.5"
-ureq = "2.12"
 pico-args = { version = "0.5", features = ["combined-flags"] }
 log = "0.4"
 env_logger = { version = "0.11", default-features = false }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+bytes = "1"
 
 [profile.release]
 lto = true
