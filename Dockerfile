@@ -62,5 +62,7 @@ EXPOSE 3080
 # Note: the default cache dir is baked into the image (created + owned above);
 # override CRATES_IO_PROXY_CACHE_DIR only if you mount a different writable path.
 
-# Run the proxy server with the default configuration (info logging to stdout).
-CMD ["chilled-crates"]
+# Run the proxy server (info logging to stdout). ENTRYPOINT (not CMD) so that
+# flags passed to `docker run <image> --flag ...` append to the binary instead
+# of replacing it.
+ENTRYPOINT ["chilled-crates"]

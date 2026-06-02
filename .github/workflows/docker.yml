@@ -1,0 +1,97 @@
+name: Build and publish container image
+
+# Builds the linux/amd64 Docker image and publishes it to the GitHub Container
+# Registry (ghcr.io). Pull requests build only (to catch breakage) and never
+# push or sign.
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Deny all permissions by default; the build job opts into the minimum it needs.
+permissions: {}
+
+# A newer run for the same ref supersedes an in-progress one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the repo
+      packages: write # push the image to ghcr.io
+      id-token: write # OIDC token to sign the provenance attestation
+      attestations: write # record the build provenance attestation
+
+    steps:
+      # Actions are pinned to commit SHAs (not mutable tags) to prevent a
+      # compromised upstream tag from injecting code. Keep current via Dependabot.
+      - name: Check out the repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false # don't leave the git token on the runner
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # Lower-case the owner/repo for use as the image name (ghcr requires it).
+      - name: Compute image name
+        run: echo "IMAGE=${REPO,,}" >> "$GITHUB_ENV"
+        env:
+          REPO: ${{ github.repository }}
+
+      # Authenticate to ghcr.io with the built-in token. Skipped for pull
+      # requests (which must not push), so fork PRs never touch the registry.
+      - name: Log in to the Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Single-arch image: skip the inline provenance manifest entry; a
+          # signed attestation is produced separately below.
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Signed, verifiable build provenance (SLSA). Verify a pulled image with:
+      #   gh attestation verify oci://ghcr.io/<owner>/chilled-crates:<tag> \
+      #     --repo <owner>/chilled-crates
+      - name: Attest build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
