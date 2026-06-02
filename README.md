@@ -44,6 +44,24 @@ chilled-crates --cooldown 7d --cooldown-overrides my-app,my-lib
 CRATES_IO_PROXY_COOLDOWN_OVERRIDES="my-app,my-lib" chilled-crates --cooldown 7d
 ```
 
+### Restricting downloads
+
+By default the cooldown only hides too-new versions from the *index*, so cargo never resolves
+them. The crate **download** endpoint stays version-agnostic — a client that already knows an
+exact `name/version` (e.g. a hand-edited `Cargo.lock`) could still fetch a too-new crate
+directly. Enable `--restrict-downloads` (or `CRATES_IO_PROXY_RESTRICT_DOWNLOADS=1`) to also
+enforce the cooldown on downloads: a version whose publish time is newer than the window is
+refused with `403`.
+
+```
+chilled-crates --cooldown 7d --restrict-downloads
+```
+
+The check reads the requested version's publish time from the locally cached index entry, and is
+**fail-closed**: if that entry isn't cached (or the version isn't in it), the download is refused.
+In normal use cargo fetches the index before downloading, so only direct/forged requests for
+too-new versions are blocked. Crates in `--cooldown-overrides` are exempt here too.
+
 ### Logging
 
 Logs are written to **stdout**. The level defaults to `info` and is set with `--log-level`
@@ -83,112 +101,69 @@ chilled-crates --enable-metrics
 
 ---
 
-The original `crates-io-proxy` README follows.
+## Upstream documentation
 
-Caching HTTP proxy server for the `crates.io` registry
-======================================================
+`chilled-crates` keeps the caching-proxy core of `crates-io-proxy` (transparent caching of the
+sparse index and the crate download server, source-replacement setup, static git-index mirror
+mode, and the build-time `native-certs` feature). For that base behavior and its configuration,
+see the upstream README:
 
-Introduction
-------------
+<https://github.com/ravenexp/crates-io-proxy#readme>
 
-`crates-io-proxy` implements transparent caching for both
-the sparse registry index at <https://index.crates.io/> and
-the static crate file download server.
+## Command-line options
 
-Two independent HTTP proxy endpoints are implemented:
-
-1. Listens to HTTP GET requests at `/index/.../{crate}`,
-   forwards them to <https://index.crates.io/> and caches the downloaded registry
-   index entries as JSON text files on the local filesystem.
-
-2. Listens to HTTP GET requests at `/api/v1/crates/{crate}/{version}/download`,
-   forwards them to <https://crates.io/> and caches the downloaded crates as
-   `.crate` files on the local filesystem.
-
-Subsequent sparse registry index and crate download API hits are serviced
-using the locally cached index entry and crate files.
-
-As a convenience feature, the download requests for the `config.json` file
-found at the sparse index root are served with a replacement file,
-which changes the crate download URL to point to this same proxy server.
-
-Usage
------
-
-Cargo can be told to use the crate registry mirror by using the source
-replacement feature. Add the following lines to your `.cargo/config`:
+Every option also reads from its environment variable (shown as `[env: ...]`). Run
+`chilled-crates --help` to print:
 
 ```
-[source.crates-io]
-replace-with = "crates-io-mirror"
+Caching crates.io proxy with sparse-index age-gating
 
-[registries.crates-io-mirror]
-index = "sparse+http://crates-io-proxy.example.com:3080/index/"
-```
-
-Using static git index mirror
------------------------------
-
-`crates-io-proxy` can also be used as the crate file download proxy server
-with a separate git-based registry index.
-
-To use this configuration, clone and rehost the [crates.io index] repository
-from GitHub and change `"dl"` parameter in `config.json` file in
-the repository root to point to the `crates-io-proxy` server instead:
-
-```
-{
-    "dl": "https://crates-io-proxy.example.com:3080/api/v1/crates",
-    "api": "https://crates.io"
-}
-```
-
-In this configuration, the git registry index link should be used instead:
-
-```
-[registries.crates-io-mirror]
-index = "https://crates-io-index.example.com/crates-io-index.git"
-```
-
-Configuration
--------------
-
-The proxy server can be configured by either command line options
-or environment variables.
-
-Run `crates-io-proxy --help` to get the following help page:
-
-```
-Usage:
-    crates-io-proxy [options]
+Usage: chilled-crates [OPTIONS]
 
 Options:
-    -v, --verbose              print more debug info
-    -h, --help                 print help and exit
-    -V, --version              print version and exit
-    -L, --listen ADDRESS:PORT  address and port to listen at (0.0.0.0:3080)
-        --listen-unix PATH     Unix domain socket path to listen at
-    -U, --upstream-url URL     upstream download URL (https://crates.io/)
-    -I, --index-url URL        upstream index URL (https://index.crates.io/)
-    -S, --proxy-url URL        this proxy server URL (http://localhost:3080/)
-    -C, --cache-dir DIR        proxy cache directory (/var/cache/crates-io-proxy)
-    -T, --cache-ttl SECONDS    index cache entry Time-to-Live in seconds (3600)
-
-Environment:
-    INDEX_CRATES_IO_URL        same as --index-url option
-    CRATES_IO_URL              same as --upstream-url option
-    CRATES_IO_PROXY_URL        same as --proxy-url option
-    CRATES_IO_PROXY_CACHE_DIR  same as --cache-dir option
-    CRATES_IO_PROXY_CACHE_TTL  same as --cache-ttl option
+  -v, --verbose...
+          Raise the log level (-v debug, -vv trace)
+  -V, --version
+          Print version and exit
+  -l, --log-level <LOG_LEVEL>
+          Log level: error|warn|info|debug|trace|off [env: LOG_LEVEL=]
+  -m, --enable-metrics
+          Expose cached crates at the /metrics endpoint [env: CRATES_IO_PROXY_ENABLE_METRICS=]
+      --restrict-downloads
+          Also refuse to *download* crate versions newer than the cooldown (not just hide them from the index) [env: CRATES_IO_PROXY_RESTRICT_DOWNLOADS=]
+      --listen-unix <LISTEN_UNIX>
+          Unix domain socket path to listen at
+  -L, --listen <LISTEN>
+          Address and port to listen at [default: 0.0.0.0:3080]
+  -I, --index-url <INDEX_URL>
+          Upstream registry index URL [env: INDEX_CRATES_IO_URL=] [default: https://index.crates.io/]
+  -U, --upstream-url <UPSTREAM_URL>
+          Upstream crate download URL [env: CRATES_IO_URL=] [default: https://crates.io/]
+  -S, --proxy-url <PROXY_URL>
+          This proxy server's external URL [env: CRATES_IO_PROXY_URL=] [default: http://localhost:3080/]
+  -C, --cache-dir <CACHE_DIR>
+          Proxy cache directory [env: CRATES_IO_PROXY_CACHE_DIR=] [default: /var/cache/chilled-crates]
+  -T, --cache-ttl <CACHE_TTL>
+          Index cache entry Time-to-Live, in seconds [env: CRATES_IO_PROXY_CACHE_TTL=] [default: 3600]
+  -K, --cooldown <COOLDOWN>
+          Hide index versions newer than this (0 = off). Suffixes: s, m, h, d, w [env: CRATES_IO_PROXY_COOLDOWN=] [default: 0]
+  -O, --cooldown-overrides <COOLDOWN_OVERRIDES>
+          Crates exempt from cooldown (comma-separated list) [env: CRATES_IO_PROXY_COOLDOWN_OVERRIDES=] [default: ""]
+  -h, --help
+          Print help
 ```
 
-Advanced configuration
-----------------------
+## Acknowledgements
 
-By default, `crates-io-proxy` uses embedded TLS trusted root certificates.
-It is possible to configure it to use the system certificate store
-at the build time by setting the `native-certs` feature flag.
+This project would not exist without the work it is built on:
 
-Configuring this behavior at the run time is not supported yet.
-
-[crates.io index]: https://github.com/rust-lang/crates.io-index
+- **[`crates-io-proxy`](https://github.com/ravenexp/crates-io-proxy)** by Sergey Kvachonok
+  (ravenexp) — the caching HTTP proxy core for the `crates.io` sparse index and crate download
+  server that `chilled-crates` is forked from. Licensed under `MIT OR Apache-2.0`, carried over
+  unchanged.
+- **[menhera.org's crates.io cooldown proxy](https://www.menhera.org/crates-io-cooldown-proxy-mitigating-supply-chain-attacks/)**
+  by metastable-void — the sparse-index age-gating approach that the supply-chain mitigation in
+  `src/cooldown.rs` is ported from.
+- **[`httpdate`](https://crates.io/crates/httpdate)** by Pyfisch — the IMF-fixdate
+  formatting/parsing logic (and Howard Hinnant's civil-date algorithms it builds on) that
+  `src/http/httpdate.rs` vendors in place of the crate.

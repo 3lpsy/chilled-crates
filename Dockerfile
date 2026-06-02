@@ -23,7 +23,7 @@ cargo build --release
 ### Second stage: Copy the built application into the runtime image.
 FROM alpine:latest AS runner
 
-LABEL version="0.2.5"
+LABEL version="0.3.0"
 LABEL description="chilled-crates: caching crates.io proxy with sparse-index age-gating"
 LABEL maintainer="3lpsy"
 

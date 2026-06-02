@@ -1,0 +1,4 @@
+# Allow a module to share its parent's name (e.g. `config/config.rs`) for
+# non-public modules, so the re-export-only `mod.rs` pattern doesn't trip
+# `clippy::module_inception`.
+allow-private-module-inception = true

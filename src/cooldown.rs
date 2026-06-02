@@ -41,6 +41,19 @@ pub fn cutoff_from(now_secs: u64, cooldown: Duration) -> Option<u64> {
     }
 }
 
+/// Extract the `pubtime` (unix seconds) of a specific `version` from a
+/// sparse-index body, or `None` if that version is absent or has no parseable
+/// `pubtime`. Used by `--restrict-downloads` to age-gate the download path.
+///
+/// Matches the compact `"vers":"<version>"` token (closing quote included, so
+/// `1.0` does not match `1.0.1`).
+pub(crate) fn version_pubtime(body: &str, version: &str) -> Option<u64> {
+    let needle = format!("\"vers\":\"{version}\"");
+    body.lines()
+        .find(|line| line.contains(&needle))
+        .and_then(line_pubtime_secs)
+}
+
 /// Parse a cooldown duration string.
 ///
 /// Accepts a bare integer (interpreted as seconds) or an integer followed by a
@@ -208,6 +221,17 @@ mod tests {
     }
 
     #[test]
+    fn duration_overflow() {
+        // A bare value at the u64 ceiling parses; multiplying by a unit overflows.
+        let max = u64::MAX.to_string();
+        assert_eq!(parse_duration(&max), Ok(Duration::from_secs(u64::MAX)));
+        let err = parse_duration(&format!("{max}w")).unwrap_err();
+        assert!(err.contains("too large"), "unexpected error: {err}");
+        // A value that does not even fit in u64 is a parse error, not overflow.
+        assert!(parse_duration("99999999999999999999999").is_err());
+    }
+
+    #[test]
     fn cutoff_disabled_when_zero() {
         assert_eq!(cutoff_from(1_000_000, Duration::from_secs(0)), None);
         assert_eq!(
@@ -229,6 +253,79 @@ mod tests {
         let out = String::from_utf8(filter_body(body, cutoff)).unwrap();
         assert!(out.contains(r#""vers":"1""#));
         assert!(!out.contains(r#""vers":"2""#));
+    }
+
+    #[test]
+    fn filter_keeps_lines_without_pubtime() {
+        // Blank lines, lines with no pubtime, and a missing trailing newline are
+        // all preserved verbatim, regardless of cutoff.
+        let body = "\n{\"name\":\"a\",\"vers\":\"1\"}\nnot json";
+        let out = String::from_utf8(filter_body(body, 0)).unwrap();
+        assert_eq!(out, body);
+    }
+
+    #[test]
+    fn filter_preserves_crlf_endings() {
+        let body = concat!(
+            "{\"vers\":\"1\",\"pubtime\":\"2026-01-01T00:00:00Z\"}\r\n",
+            "{\"vers\":\"2\",\"pubtime\":\"2026-03-20T00:00:00Z\"}\r\n",
+        );
+        let cutoff = parse_rfc3339z("2026-02-01T00:00:00Z").unwrap();
+        let out = String::from_utf8(filter_body(body, cutoff)).unwrap();
+        // The kept line retains its CRLF; the too-new line is dropped whole.
+        assert_eq!(out, "{\"vers\":\"1\",\"pubtime\":\"2026-01-01T00:00:00Z\"}\r\n");
+    }
+
+    #[test]
+    fn filter_keeps_line_at_cutoff_boundary() {
+        // Only strictly-newer-than-cutoff is dropped; pubtime == cutoff stays.
+        let pubtime = "2026-03-20T00:00:00Z";
+        let cutoff = parse_rfc3339z(pubtime).unwrap();
+        let body = format!("{{\"vers\":\"1\",\"pubtime\":\"{pubtime}\"}}\n");
+        let out = String::from_utf8(filter_body(&body, cutoff)).unwrap();
+        assert_eq!(out, body);
+        // One second older a cutoff and the same line is dropped.
+        assert!(String::from_utf8(filter_body(&body, cutoff - 1)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn filter_index_passes_through_non_utf8() {
+        // Invalid UTF-8 is returned untouched rather than mangled.
+        let data = [0xff, 0xfe, 0x00, 0x01];
+        assert_eq!(filter_index(&data, 0), data.to_vec());
+    }
+
+    #[test]
+    fn version_pubtime_finds_exact_version() {
+        let body = concat!(
+            r#"{"name":"a","vers":"1.0.0","pubtime":"2026-01-01T00:00:00Z"}"#,
+            "\n",
+            r#"{"name":"a","vers":"1.0.1","pubtime":"2026-03-20T00:00:00Z"}"#,
+            "\n",
+        );
+        assert_eq!(
+            version_pubtime(body, "1.0.1"),
+            parse_rfc3339z("2026-03-20T00:00:00Z")
+        );
+        // Absent version -> None.
+        assert_eq!(version_pubtime(body, "9.9.9"), None);
+    }
+
+    #[test]
+    fn version_pubtime_requires_full_version_match() {
+        // The closing quote in the needle prevents `1.0` matching `1.0.1`.
+        let body = r#"{"name":"a","vers":"1.0.1","pubtime":"2026-03-20T00:00:00Z"}"#;
+        assert_eq!(version_pubtime(body, "1.0"), None);
+        assert_eq!(
+            version_pubtime(body, "1.0.1"),
+            parse_rfc3339z("2026-03-20T00:00:00Z")
+        );
+    }
+
+    #[test]
+    fn version_pubtime_none_without_pubtime() {
+        let body = r#"{"name":"a","vers":"1.0.0"}"#;
+        assert_eq!(version_pubtime(body, "1.0.0"), None);
     }
 
     #[test]

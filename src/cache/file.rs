@@ -1,15 +1,16 @@
-//! Index entry and crate file cache helpers
+//! Index entry and crate file cache helpers (on-disk).
 
-use std::fs::{create_dir_all, metadata, read, write, File};
+use std::fs::{File, create_dir_all, metadata, read, write};
 use std::io::Write;
 use std::path::Path;
 
 use log::error;
 
-use super::{CrateInfo, IndexEntry};
+use super::crate_info::CrateInfo;
+use super::index_entry::IndexEntry;
 
 /// Caches the crate package file on the local filesystem.
-pub fn cache_store_crate(dir: &Path, crate_info: &CrateInfo, data: &[u8]) {
+pub(crate) fn cache_store_crate(dir: &Path, crate_info: &CrateInfo, data: &[u8]) {
     let crate_file_path = dir.join(crate_info.to_file_path());
 
     // Create all parent directories first.
@@ -23,12 +24,12 @@ pub fn cache_store_crate(dir: &Path, crate_info: &CrateInfo, data: &[u8]) {
 }
 
 /// Fetches the cached crate package file from the local filesystem, if present.
-pub fn cache_fetch_crate(dir: &Path, crate_info: &CrateInfo) -> Option<Vec<u8>> {
+pub(crate) fn cache_fetch_crate(dir: &Path, crate_info: &CrateInfo) -> Option<Vec<u8>> {
     read(dir.join(crate_info.to_file_path())).ok()
 }
 
 /// Caches the index entry file on the local filesystem.
-pub fn cache_store_index_entry(dir: &Path, entry: &IndexEntry, data: &[u8]) {
+pub(crate) fn cache_store_index_entry(dir: &Path, entry: &IndexEntry, data: &[u8]) {
     let entry_file_path = dir.join(entry.to_file_path());
 
     if let Err(e) = create_dir_all(entry_file_path.parent().unwrap()) {
@@ -57,12 +58,12 @@ pub fn cache_store_index_entry(dir: &Path, entry: &IndexEntry, data: &[u8]) {
 }
 
 /// Fetches the cached index entry file from the local filesystem, if present.
-pub fn cache_fetch_index_entry(dir: &Path, entry: &IndexEntry) -> Option<Vec<u8>> {
+pub(crate) fn cache_fetch_index_entry(dir: &Path, entry: &IndexEntry) -> Option<Vec<u8>> {
     read(dir.join(entry.to_file_path())).ok()
 }
 
 /// Tries to recreate the missing index entry metadata from the cache file metadata.
-pub fn cache_try_find_index_entry(dir: &Path, name: &str) -> Option<IndexEntry> {
+pub(crate) fn cache_try_find_index_entry(dir: &Path, name: &str) -> Option<IndexEntry> {
     let mut entry = IndexEntry::new(name);
 
     let mtime = metadata(dir.join(entry.to_file_path()))
