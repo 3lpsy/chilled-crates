@@ -7,7 +7,7 @@ use axum::{
     response::Response,
 };
 use bytes::Bytes;
-use log::{debug, info, warn};
+use log::{info, warn};
 
 use crate::cache::{
     CrateInfo, IndexEntry, cache_fetch_crate, cache_fetch_index_entry, cache_store_crate,
@@ -112,7 +112,7 @@ pub(crate) async fn handle_download(
     }
 
     if let Some(data) = cache_read_crate(&state.config.crates_dir, &crate_info).await {
-        debug!("proxy: local cache hit for {crate_info}");
+        info!("cache: served cached crate {crate_info} ({} bytes)", data.len());
         return crate_response(Bytes::from(data));
     }
 

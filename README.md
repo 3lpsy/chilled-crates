@@ -67,8 +67,9 @@ too-new versions are blocked. Crates in `--cooldown-overrides` are exempt here t
 Logs are written to **stdout**. The level defaults to `info` and is set with `--log-level`
 (or the `LOG_LEVEL` env var): `error`, `warn`, `info`, `debug`, `trace`, or `off`. `-v`/`-vv`
 are shortcuts for `debug`/`trace`, and `RUST_LOG` still overrides everything (and allows
-per-module filters). `info` stays quiet during normal operation — errors, malformed requests,
-and bad upstream responses are logged, but routine cache hits are `debug`.
+per-module filters). At `info`, each crate download — whether freshly fetched and stored or
+served from the local cache — is logged, along with errors, malformed requests, and bad upstream
+responses; routine sparse-index cache hits stay at `debug`.
 
 ```
 chilled-crates --log-level debug
