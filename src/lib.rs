@@ -50,13 +50,13 @@ pub(crate) mod valid;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::{Router, routing::get};
+use axum::{routing::get, Router};
 use env_logger::{Builder as LogBuilder, Env as LogEnv};
 
 use crate::constants::HTTP_USER_AGENT;
 use crate::http::error_response;
 use crate::routes::{handle_download, handle_healthz, handle_home, handle_index, handle_metrics};
-use crate::server::{AppState, serve};
+use crate::server::{serve, AppState};
 
 pub use crate::config::Config;
 pub use crate::server::serve_listener;

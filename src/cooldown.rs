@@ -273,7 +273,10 @@ mod tests {
         let cutoff = parse_rfc3339z("2026-02-01T00:00:00Z").unwrap();
         let out = String::from_utf8(filter_body(body, cutoff)).unwrap();
         // The kept line retains its CRLF; the too-new line is dropped whole.
-        assert_eq!(out, "{\"vers\":\"1\",\"pubtime\":\"2026-01-01T00:00:00Z\"}\r\n");
+        assert_eq!(
+            out,
+            "{\"vers\":\"1\",\"pubtime\":\"2026-01-01T00:00:00Z\"}\r\n"
+        );
     }
 
     #[test]
@@ -285,7 +288,9 @@ mod tests {
         let out = String::from_utf8(filter_body(&body, cutoff)).unwrap();
         assert_eq!(out, body);
         // One second older a cutoff and the same line is dropped.
-        assert!(String::from_utf8(filter_body(&body, cutoff - 1)).unwrap().is_empty());
+        assert!(String::from_utf8(filter_body(&body, cutoff - 1))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -352,7 +357,10 @@ mod tests {
     #[test]
     fn line_with_pubtime() {
         let line = r#"{"name":"a","vers":"1","pubtime":"2026-03-20T03:13:45Z"}"#;
-        assert_eq!(line_pubtime_secs(line), parse_rfc3339z("2026-03-20T03:13:45Z"));
+        assert_eq!(
+            line_pubtime_secs(line),
+            parse_rfc3339z("2026-03-20T03:13:45Z")
+        );
     }
 
     #[test]
@@ -365,7 +373,10 @@ mod tests {
     fn line_pubtime_realistic() {
         // Compact crates.io-style line with deps before pubtime.
         let line = r#"{"name":"serde","vers":"1.0.1","deps":[{"name":"x","req":"^1"}],"cksum":"ab","features":{},"yanked":false,"pubtime":"2026-03-20T03:13:45Z"}"#;
-        assert_eq!(line_pubtime_secs(line), parse_rfc3339z("2026-03-20T03:13:45Z"));
+        assert_eq!(
+            line_pubtime_secs(line),
+            parse_rfc3339z("2026-03-20T03:13:45Z")
+        );
     }
 
     #[test]
@@ -373,7 +384,10 @@ mod tests {
         // A string *value* reading "pubtime" must not be mistaken for the key;
         // the real key still wins.
         let line = r#"{"note":"pubtime","pubtime":"2026-03-20T03:13:45Z"}"#;
-        assert_eq!(line_pubtime_secs(line), parse_rfc3339z("2026-03-20T03:13:45Z"));
+        assert_eq!(
+            line_pubtime_secs(line),
+            parse_rfc3339z("2026-03-20T03:13:45Z")
+        );
         // ...and with no real key, the value occurrence yields nothing.
         assert_eq!(line_pubtime_secs(r#"{"note":"pubtime"}"#), None);
     }

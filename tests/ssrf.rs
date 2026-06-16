@@ -17,18 +17,18 @@ use common::{ndjson, TestProxy, OLD};
 
 /// Index-path name vectors that must be rejected without contacting upstream.
 const INDEX_VECTORS: &[&str] = &[
-    "/index/se/rd/a@b",             // userinfo separator
-    "/index/se/rd/@evil.com",       // bare userinfo@host
-    "/index/se/rd/a:b",             // scheme/port separator
-    "/index/se/rd/http:",           // scheme prefix
-    "/index/se/rd/127.0.0.1:8080",  // host:port
-    "/index/se/rd/evil.com",        // host-like (dot)
-    "/index/se/rd/a%40b",           // encoded @
-    "/index/se/rd/a%23b",           // encoded # (fragment)
-    "/index/se/rd/a%3Fb",           // encoded ? (query)
-    "/index/se/rd/a%2Fb",           // encoded / (segment injection)
-    "/index/se/rd/a%5Cb",           // encoded backslash
-    "/index/se/rd/a%20b",           // encoded space
+    "/index/se/rd/a@b",            // userinfo separator
+    "/index/se/rd/@evil.com",      // bare userinfo@host
+    "/index/se/rd/a:b",            // scheme/port separator
+    "/index/se/rd/http:",          // scheme prefix
+    "/index/se/rd/127.0.0.1:8080", // host:port
+    "/index/se/rd/evil.com",       // host-like (dot)
+    "/index/se/rd/a%40b",          // encoded @
+    "/index/se/rd/a%23b",          // encoded # (fragment)
+    "/index/se/rd/a%3Fb",          // encoded ? (query)
+    "/index/se/rd/a%2Fb",          // encoded / (segment injection)
+    "/index/se/rd/a%5Cb",          // encoded backslash
+    "/index/se/rd/a%20b",          // encoded space
 ];
 
 /// Download name/version vectors that must be rejected without contacting upstream.
@@ -68,7 +68,12 @@ async fn download_injection_vectors_are_rejected() {
 async fn query_string_is_not_forwarded_upstream() {
     let proxy = TestProxy::builder().start().await;
     proxy
-        .mock_index("serde", &ndjson("serde", &[("1.0.0", OLD)]), "\"e\"", "Thu, 01 Jan 1970 00:00:00 GMT")
+        .mock_index(
+            "serde",
+            &ndjson("serde", &[("1.0.0", OLD)]),
+            "\"e\"",
+            "Thu, 01 Jan 1970 00:00:00 GMT",
+        )
         .await;
 
     // A query string attempting to smuggle a host is ignored; the request is
@@ -83,7 +88,12 @@ async fn query_string_is_not_forwarded_upstream() {
 async fn fragment_is_not_forwarded_upstream() {
     let proxy = TestProxy::builder().start().await;
     proxy
-        .mock_index("serde", &ndjson("serde", &[("1.0.0", OLD)]), "\"e\"", "Thu, 01 Jan 1970 00:00:00 GMT")
+        .mock_index(
+            "serde",
+            &ndjson("serde", &[("1.0.0", OLD)]),
+            "\"e\"",
+            "Thu, 01 Jan 1970 00:00:00 GMT",
+        )
         .await;
 
     // The fragment is client-side only — the proxy never sees it, and certainly

@@ -85,7 +85,12 @@ struct Cli {
     cooldown: Duration,
 
     /// Crates exempt from cooldown (comma-separated list).
-    #[arg(short = 'O', long, env = "CRATES_IO_PROXY_COOLDOWN_OVERRIDES", default_value = "")]
+    #[arg(
+        short = 'O',
+        long,
+        env = "CRATES_IO_PROXY_COOLDOWN_OVERRIDES",
+        default_value = ""
+    )]
     cooldown_overrides: String,
 }
 
@@ -109,9 +114,18 @@ impl Startup {
         info!("proxy: using upstream index URL: {}", c.index_url);
         info!("proxy: using upstream download URL: {}", c.upstream_url);
         info!("proxy: using proxy server URL: {}", c.proxy_url);
-        info!("cache: using index directory: {}", c.index_dir.to_string_lossy());
-        info!("cache: using crates directory: {}", c.crates_dir.to_string_lossy());
-        info!("cache: using index entry TTL = {} seconds", c.cache_ttl.as_secs());
+        info!(
+            "cache: using index directory: {}",
+            c.index_dir.to_string_lossy()
+        );
+        info!(
+            "cache: using crates directory: {}",
+            c.crates_dir.to_string_lossy()
+        );
+        info!(
+            "cache: using index entry TTL = {} seconds",
+            c.cache_ttl.as_secs()
+        );
 
         if c.cooldown.as_secs() == 0 {
             info!("cooldown: age-gating disabled (pass-through)");

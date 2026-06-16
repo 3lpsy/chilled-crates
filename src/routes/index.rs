@@ -5,20 +5,20 @@ use std::path::Path;
 use axum::{
     body::Body,
     extract::{Path as UrlPath, State},
-    http::{HeaderMap, header},
+    http::{header, HeaderMap},
     response::Response,
 };
 use bytes::Bytes;
 use log::{debug, error, warn};
 
 use crate::cache::{
-    IndexEntry, MEMO_BUCKET_SECS, cache_fetch_index_entry, cache_store_index_entry,
-    cache_try_find_index_entry,
+    cache_fetch_index_entry, cache_store_index_entry, cache_try_find_index_entry, IndexEntry,
+    MEMO_BUCKET_SECS,
 };
 use crate::config::Config;
 use crate::constants::{CRATES_API_PATH, INDEX_CTYPE, MAX_INDEX_SIZE};
 use crate::cooldown;
-use crate::http::{FetchError, error_response, format_json_error, json_response, read_capped};
+use crate::http::{error_response, format_json_error, json_response, read_capped, FetchError};
 use crate::server::AppState;
 
 /// Registry configuration file endpoint path (at the sparse-index root).
@@ -264,7 +264,11 @@ async fn download_index_entry(
     let mut response = request.send().await.map_err(FetchError::Http)?;
     let status = response.status().as_u16();
 
-    if let Some(etag) = response.headers().get(header::ETAG).and_then(|v| v.to_str().ok()) {
+    if let Some(etag) = response
+        .headers()
+        .get(header::ETAG)
+        .and_then(|v| v.to_str().ok())
+    {
         entry.set_etag(etag);
     }
     if let Some(last_modified) = response
@@ -368,7 +372,10 @@ pub(crate) async fn handle_index(
     // is remembered: a `304` is only safe if it matches the window we serve at
     // now (so enabling/changing cooldown invalidates stale client copies).
     let mut client_window = None;
-    if let Some(inm) = headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
+    if let Some(inm) = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+    {
         index_entry.set_etag(&unmark_etag(inm));
         client_window = etag_window(inm);
     } else if let Some(ims) = headers

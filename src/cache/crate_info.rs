@@ -105,19 +105,25 @@ mod tests {
         assert_eq!(CrateInfo::try_from_download_url("serde/1.0.0"), None);
         // Wrong segment count.
         assert_eq!(CrateInfo::try_from_download_url("serde/download"), None);
-        assert_eq!(
-            CrateInfo::try_from_download_url("a/b/c/download"),
-            None
-        );
+        assert_eq!(CrateInfo::try_from_download_url("a/b/c/download"), None);
     }
 
     #[test]
     fn from_download_url_rejects_injection_vectors() {
         // SSRF scheme / host and path-traversal segments must not survive.
-        assert_eq!(CrateInfo::try_from_download_url("http:/1.0.0/download"), None);
-        assert_eq!(CrateInfo::try_from_download_url("serde/127.0.0.1:9/download"), None);
+        assert_eq!(
+            CrateInfo::try_from_download_url("http:/1.0.0/download"),
+            None
+        );
+        assert_eq!(
+            CrateInfo::try_from_download_url("serde/127.0.0.1:9/download"),
+            None
+        );
         assert_eq!(CrateInfo::try_from_download_url("../etc/download"), None);
-        assert_eq!(CrateInfo::try_from_download_url("serde/../../x/download"), None);
+        assert_eq!(
+            CrateInfo::try_from_download_url("serde/../../x/download"),
+            None
+        );
     }
 
     #[test]

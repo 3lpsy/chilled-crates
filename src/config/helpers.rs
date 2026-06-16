@@ -5,7 +5,14 @@ use std::collections::HashSet;
 /// Normalizes a requested log level to a known value, defaulting to `info`.
 pub(crate) fn normalize_log_level(level: Option<String>) -> String {
     match level.as_deref().map(str::trim).map(str::to_ascii_lowercase) {
-        Some(l) if matches!(l.as_str(), "error" | "warn" | "info" | "debug" | "trace" | "off") => l,
+        Some(l)
+            if matches!(
+                l.as_str(),
+                "error" | "warn" | "info" | "debug" | "trace" | "off"
+            ) =>
+        {
+            l
+        }
         _ => "info".to_string(),
     }
 }

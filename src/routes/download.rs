@@ -10,12 +10,12 @@ use bytes::Bytes;
 use log::{info, warn};
 
 use crate::cache::{
-    CrateInfo, IndexEntry, cache_fetch_crate, cache_fetch_index_entry, cache_store_crate,
+    cache_fetch_crate, cache_fetch_index_entry, cache_store_crate, CrateInfo, IndexEntry,
 };
 use crate::constants::{CRATES_API_PATH, MAX_CRATE_SIZE};
 use crate::cooldown;
 use crate::http::{
-    FetchError, crate_response, error_response, format_json_error, json_response, read_capped,
+    crate_response, error_response, format_json_error, json_response, read_capped, FetchError,
 };
 use crate::server::AppState;
 
@@ -112,7 +112,10 @@ pub(crate) async fn handle_download(
     }
 
     if let Some(data) = cache_read_crate(&state.config.crates_dir, &crate_info).await {
-        info!("cache: served cached crate {crate_info} ({} bytes)", data.len());
+        info!(
+            "cache: served cached crate {crate_info} ({} bytes)",
+            data.len()
+        );
         return crate_response(Bytes::from(data));
     }
 
@@ -126,7 +129,10 @@ pub(crate) async fn handle_download(
                 tokio::task::spawn_blocking(move || cache_store_crate(&dir, &info, &stored)).await;
             // Cache misses are infrequent (once per crate version), so this is a
             // useful high-level event without polluting the log.
-            info!("cache: stored new crate {crate_info} ({} bytes)", data.len());
+            info!(
+                "cache: stored new crate {crate_info} ({} bytes)",
+                data.len()
+            );
             crate_response(data)
         }
         Err(response) => response,

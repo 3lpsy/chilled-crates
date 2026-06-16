@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::config::Config;
 use crate::cache::{FilteredMemo, MetadataCache};
+use crate::config::Config;
 
 /// Shared application state passed to every request handler (cheap to clone).
 #[derive(Clone)]

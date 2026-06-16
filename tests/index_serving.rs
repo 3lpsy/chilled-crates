@@ -24,7 +24,12 @@ async fn not_cached_fetches_upstream_and_writes_disk() {
     assert_eq!(resp.text().await.unwrap(), body);
 
     // Exactly one upstream fetch, and the pristine body landed on disk...
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 1);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        1
+    );
     let path = proxy.index_cache_path("serde");
     assert_eq!(fs::read_to_string(&path).unwrap(), body);
     // ...with its mtime set from the upstream Last-Modified (epoch here).
@@ -48,15 +53,17 @@ async fn cached_within_ttl_serves_from_disk_without_upstream() {
     assert_eq!(second.text().await.unwrap(), body);
 
     // Second request served from the warm cache — upstream hit only once.
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 1);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        1
+    );
 }
 
 #[tokio::test]
 async fn ttl_zero_revalidates_each_request() {
-    let proxy = TestProxy::builder()
-        .cache_ttl(Duration::ZERO)
-        .start()
-        .await;
+    let proxy = TestProxy::builder().cache_ttl(Duration::ZERO).start().await;
     let body = ndjson("serde", &[("1.0.0", OLD)]);
     proxy
         .mock_index("serde", &body, "\"etag123\"", EPOCH_HTTPDATE)
@@ -69,7 +76,12 @@ async fn ttl_zero_revalidates_each_request() {
     assert_eq!(second.status(), 200);
     assert_eq!(second.text().await.unwrap(), body);
 
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 2);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        2
+    );
 }
 
 #[tokio::test]
@@ -85,12 +97,15 @@ async fn client_revalidation_gets_304() {
     assert_eq!(etag, "\"etag123\"");
 
     // Client presents the validator it was given -> 304, empty body, no upstream.
-    let second = proxy
-        .get_index("serde", &[("if-none-match", &etag)])
-        .await;
+    let second = proxy.get_index("serde", &[("if-none-match", &etag)]).await;
     assert_eq!(second.status(), 304);
     assert!(second.text().await.unwrap().is_empty());
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 1);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        1
+    );
 }
 
 #[tokio::test]
@@ -98,7 +113,9 @@ async fn client_if_modified_since_gets_304() {
     let proxy = TestProxy::builder().start().await;
     let body = ndjson("serde", &[("1.0.0", OLD)]);
     let last_modified = "Mon, 04 Feb 2019 06:09:26 GMT"; // 2019-02-04 is a Monday
-    proxy.mock_index("serde", &body, "\"etag123\"", last_modified).await;
+    proxy
+        .mock_index("serde", &body, "\"etag123\"", last_modified)
+        .await;
 
     let first = proxy.get_index("serde", &[]).await;
     assert_eq!(first.headers()["last-modified"], last_modified);
@@ -109,7 +126,12 @@ async fn client_if_modified_since_gets_304() {
         .await;
     assert_eq!(second.status(), 304);
     assert!(second.text().await.unwrap().is_empty());
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 1);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        1
+    );
 }
 
 #[tokio::test]
@@ -130,7 +152,12 @@ async fn expired_with_client_validator_relays_upstream_304() {
     assert_eq!(resp.status(), 304);
     assert!(resp.text().await.unwrap().is_empty());
     // First populate + this revalidation = two upstream requests.
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 2);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        2
+    );
 }
 
 #[tokio::test]
@@ -158,5 +185,10 @@ async fn upstream_error_status_is_forwarded() {
     proxy.mock_index_status("serde", 404).await;
 
     assert_eq!(proxy.get_index("serde", &[]).await.status(), 404);
-    assert_eq!(proxy.upstream_hits(&proxy.index_upstream_path("serde")).await, 1);
+    assert_eq!(
+        proxy
+            .upstream_hits(&proxy.index_upstream_path("serde"))
+            .await,
+        1
+    );
 }

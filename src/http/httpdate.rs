@@ -70,10 +70,7 @@ pub(crate) fn parse_http_date(s: &str) -> Option<SystemTime> {
 
 /// Month abbreviation → 1-based month number.
 fn month_index(name: &str) -> Option<u32> {
-    MONTHS
-        .iter()
-        .position(|m| *m == name)
-        .map(|i| i as u32 + 1)
+    MONTHS.iter().position(|m| *m == name).map(|i| i as u32 + 1)
 }
 
 /// Civil date → days since 1970-01-01 (Hinnant `days_from_civil`).

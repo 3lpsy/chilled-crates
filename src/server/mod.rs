@@ -3,6 +3,6 @@
 pub(crate) mod serve;
 pub(crate) mod state;
 
-pub(crate) use serve::{ListenAddress, serve};
 pub use serve::serve_listener;
+pub(crate) use serve::{serve, ListenAddress};
 pub(crate) use state::AppState;

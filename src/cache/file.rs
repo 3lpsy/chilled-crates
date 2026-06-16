@@ -1,6 +1,6 @@
 //! Index entry and crate file cache helpers (on-disk).
 
-use std::fs::{File, create_dir_all, metadata, read, write};
+use std::fs::{create_dir_all, metadata, read, write, File};
 use std::io::Write;
 use std::path::Path;
 
