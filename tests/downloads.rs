@@ -69,6 +69,30 @@ async fn restrict_blocks_too_new_allows_old() {
 }
 
 #[tokio::test]
+async fn restrict_allows_old_mixed_case_crate() {
+    // Regression: cargo caches the index at a lowercased path (`in/fl/inflector`),
+    // but the download endpoint carries the canonical case (`Inflector`). The gate
+    // must normalize, or it looks up the wrong path and 403s every old,
+    // uppercase-named crate.
+    let proxy = TestProxy::builder()
+        .cooldown_days(7)
+        .restrict_downloads()
+        .start()
+        .await;
+    // Pristine index seeded at the lowercased path, as the index endpoint writes it.
+    proxy.seed_index_file(
+        "inflector",
+        &ndjson("Inflector", &[("0.11.4", OLD)]),
+        SystemTime::now(),
+    );
+    proxy.mock_crate("Inflector", "0.11.4", CRATE_BYTES).await;
+
+    let resp = proxy.download("Inflector", "0.11.4").await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.bytes().await.unwrap().as_ref(), CRATE_BYTES);
+}
+
+#[tokio::test]
 async fn restrict_is_fail_closed() {
     let proxy = TestProxy::builder()
         .cooldown_days(7)
@@ -80,7 +104,11 @@ async fn restrict_is_fail_closed() {
     assert_eq!(proxy.download("tokio", "1.0.0").await.status(), 403);
 
     // Index cached but the requested version isn't in it -> also refused.
-    proxy.seed_index_file("serde", &ndjson("serde", &[("1.0.0", OLD)]), SystemTime::now());
+    proxy.seed_index_file(
+        "serde",
+        &ndjson("serde", &[("1.0.0", OLD)]),
+        SystemTime::now(),
+    );
     assert_eq!(proxy.download("serde", "2.0.0").await.status(), 403);
 }
 

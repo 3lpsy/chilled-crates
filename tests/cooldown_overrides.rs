@@ -15,13 +15,25 @@ async fn override_crate_is_served_unfiltered() {
         .await;
     let body = ndjson("serde", &[("1.0.0", OLD), ("2.0.0", TOO_NEW)]);
     proxy
-        .mock_index("serde", &body, "\"etag123\"", "Thu, 01 Jan 1970 00:00:00 GMT")
+        .mock_index(
+            "serde",
+            &body,
+            "\"etag123\"",
+            "Thu, 01 Jan 1970 00:00:00 GMT",
+        )
         .await;
 
     let resp = proxy.get_index("serde", &[]).await;
-    assert_eq!(resp.headers()["etag"], "\"etag123\"", "strong ETag, unfiltered");
+    assert_eq!(
+        resp.headers()["etag"],
+        "\"etag123\"",
+        "strong ETag, unfiltered"
+    );
     let text = resp.text().await.unwrap();
-    assert!(text.contains(r#""vers":"2.0.0""#), "exempt crate keeps too-new version");
+    assert!(
+        text.contains(r#""vers":"2.0.0""#),
+        "exempt crate keeps too-new version"
+    );
 }
 
 #[tokio::test]
@@ -33,13 +45,23 @@ async fn override_match_is_case_insensitive() {
         .override_crate("serde")
         .start()
         .await;
-    let body = ndjson("Serde", &[("1.0.0", OLD), ("2.0.0", TOO_NEW)]);
+    // Upstream (like crates.io) serves at the lowercased path; the client makes
+    // a mixed-case request, which the proxy normalizes when fetching/caching.
+    let body = ndjson("serde", &[("1.0.0", OLD), ("2.0.0", TOO_NEW)]);
     proxy
-        .mock_index("Serde", &body, "\"etag123\"", "Thu, 01 Jan 1970 00:00:00 GMT")
+        .mock_index(
+            "serde",
+            &body,
+            "\"etag123\"",
+            "Thu, 01 Jan 1970 00:00:00 GMT",
+        )
         .await;
 
     let text = proxy.get_index("Serde", &[]).await.text().await.unwrap();
-    assert!(text.contains(r#""vers":"2.0.0""#), "case-insensitive override exempts crate");
+    assert!(
+        text.contains(r#""vers":"2.0.0""#),
+        "case-insensitive override exempts crate"
+    );
 }
 
 #[tokio::test]

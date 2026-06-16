@@ -100,7 +100,9 @@ impl TestProxy {
     /// Mounts a 200 crate-download response with `bytes`.
     pub async fn mock_crate(&self, name: &str, version: &str, bytes: &[u8]) {
         Mock::given(method("GET"))
-            .and(match_path(format!("/api/v1/crates/{name}/{version}/download")))
+            .and(match_path(format!(
+                "/api/v1/crates/{name}/{version}/download"
+            )))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(bytes.to_vec()))
             .mount(&self.mock_upstream)
             .await;
@@ -109,7 +111,9 @@ impl TestProxy {
     /// Mounts an arbitrary upstream status for a crate download.
     pub async fn mock_crate_status(&self, name: &str, version: &str, status: u16) {
         Mock::given(method("GET"))
-            .and(match_path(format!("/api/v1/crates/{name}/{version}/download")))
+            .and(match_path(format!(
+                "/api/v1/crates/{name}/{version}/download"
+            )))
             .respond_with(ResponseTemplate::new(status).set_body_string("nope"))
             .mount(&self.mock_upstream)
             .await;

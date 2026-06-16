@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-06-03
+
+- Fork as `chilled-crates`: sparse-index cooldown age-gating against supply-chain attacks (`--cooldown`, `--cooldown-overrides`, `--restrict-downloads`)
+- Add `/healthz` and opt-in `/metrics` endpoints
+- Rewrite on `axum`/`tokio`/`reqwest`; add blackbox integration test suite
+
 ## [0.2.4] - 2025-02-15
 
 ### 🐛 Bug Fixes

@@ -118,9 +118,17 @@ impl IndexEntry {
     }
 
     /// Builds the index entry download URL (relative).
+    ///
+    /// The name is ASCII-lowercased to match the sparse-index path convention:
+    /// crates.io serves entries at a lowercased path (e.g. `Inflector` lives at
+    /// `in/fl/inflector`), and cargo requests the index that way. The download
+    /// endpoint, however, carries the crate's canonical case, so without this
+    /// normalization the `--restrict-downloads` gate would look up a cached entry
+    /// at the wrong path and fail-closed (403) for any crate with uppercase in
+    /// its name.
     #[must_use]
     pub fn to_index_url(&self) -> String {
-        let name = &self.name;
+        let name = self.name.to_ascii_lowercase();
 
         match name.len() {
             0 => String::new(),
@@ -177,6 +185,23 @@ mod tests {
         assert_eq!(IndexEntry::new("ab").to_index_url(), "2/ab");
         assert_eq!(IndexEntry::new("abc").to_index_url(), "3/a/abc");
         assert_eq!(IndexEntry::new("abcd").to_index_url(), "ab/cd/abcd");
+    }
+
+    #[test]
+    fn to_url_lowercases_name() {
+        // crates.io serves entries at a lowercased path; the download endpoint
+        // carries canonical case, so the path must normalize or the
+        // --restrict-downloads gate looks in the wrong place. (Regression: a
+        // 403 on every uppercase-named crate, e.g. `Inflector`.)
+        assert_eq!(
+            IndexEntry::new("Inflector").to_index_url(),
+            "in/fl/inflector"
+        );
+        assert_eq!(IndexEntry::new("UUID").to_index_url(), "uu/id/uuid");
+        assert_eq!(
+            IndexEntry::new("Inflector").to_index_url(),
+            IndexEntry::new("inflector").to_index_url()
+        );
     }
 
     #[test]
